@@ -1,0 +1,19 @@
+{
+    "name": "grammar-helper-serverless",
+    "version": "1.0.0",
+    "description": "Grammar Helper powered by Gemini AI",
+    "main": "app.js",
+    "type": "module",
+    "scripts": {
+        "start": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "preview": "wrangler preview"
+    },
+    "dependencies": {
+        "@ai-sdk/mistral": "^2.0.26",
+        "ai": "^5.0.112"
+    },
+    "devDependencies": {
+        "wrangler": "^3.0.0"
+    }
+}

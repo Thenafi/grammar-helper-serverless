@@ -1,0 +1,4 @@
+name = "grammar-helper-serverless"
+main = "app.js"
+compatibility_date = "2024-11-18"
+workers_dev = true
