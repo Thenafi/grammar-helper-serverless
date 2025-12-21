@@ -323,7 +323,7 @@ Your output should contain only the corrected text without quotation marks or ad
 
         // Use Vercel AI SDK to generate text
         const { text: correctedText } = await generateText({
-          model: mistral('mistral-small-latest'),
+          model: mistral('mistral-medium-2505'),
           system: systemInstruction,
           prompt: text,
           temperature: 0.7,
