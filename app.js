@@ -191,7 +191,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 isProcessing = true;
                 statusEl.textContent = "Processing...";
                 statusEl.className = "status processing";
-                statusEl.className = "status processing";
                 proofreadBtn.disabled = true;
                 copyBtn.disabled = true;
                 showDiffBtn.disabled = true;
@@ -213,10 +212,10 @@ const HTML_CONTENT = `<!DOCTYPE html>
                     const data = await response.json();
                     textInput.value = data.text;
                     statusEl.textContent = "Success!";
-                    statusEl.textContent = "Success!";
                     statusEl.className = "status success";
                     copyBtn.disabled = false;
                     showDiffBtn.disabled = false;
+                    copyBtn.focus();
                     
                     // Diff is not shown automatically anymore
 
