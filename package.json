@@ -1,7 +1,7 @@
 {
     "name": "grammar-helper-serverless",
     "version": "1.0.0",
-    "description": "Grammar Helper powered by DeepSeek via AgentRouter with Gemini fallback",
+    "description": "Grammar Helper powered by Gemini 3.5 Flash-Lite on Cloudflare Workers",
     "main": "app.js",
     "type": "module",
     "scripts": {
