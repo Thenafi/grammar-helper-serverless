@@ -2,3 +2,8 @@ name = "grammar-helper-serverless"
 main = "app.js"
 compatibility_date = "2024-11-18"
 workers_dev = true
+
+[vars]
+AGENTROUTER_BASE_URL = "https://co.agentrouter.org/v1"
+AGENTROUTER_MODEL = "deepseek-flash"
+GEMINI_MODEL = "gemini-3.5-flash-lite"

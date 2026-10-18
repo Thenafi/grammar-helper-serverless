@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { createMistral } from "@ai-sdk/mistral";
+import { AIUnavailableError, checkAIHealth, proofreadWithFallback } from "./ai-providers.js";
 
 const HTML_CONTENT = `<!DOCTYPE html>
 <html lang="en">
@@ -279,6 +278,17 @@ const HTML_CONTENT = `<!DOCTYPE html>
 </body>
 </html>`;
 
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -291,20 +301,25 @@ export default {
       });
     }
 
+    if ((url.pathname === "/health" || url.pathname === "/api/health") && request.method === "GET") {
+      const health = await checkAIHealth(env);
+      return jsonResponse(health, health.status === "unhealthy" ? 503 : 200);
+    }
+
     if (url.pathname === "/api/proofread" && request.method === "POST") {
+      let input;
       try {
-        const { text } = await request.json();
+        input = await request.json();
+      } catch {
+        return jsonResponse({ error: "Request body must be valid JSON." }, 400);
+      }
 
-        if (!text) {
-          return new Response(JSON.stringify({ error: "Text is required" }), {
-            status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          });
-        }
+      const text = input?.text;
+      if (typeof text !== "string" || !text.trim()) {
+        return jsonResponse({ error: "Text must be a non-empty string." }, 400);
+      }
 
+      try {
         const systemInstruction = `
 You are a proofreader. I will provide you with text content, and your task is to correct only spelling, syntax, and grammar mistakes in the text. Do not make improvements or alterations to the original meaning, style, structure, or formatting of the content.
 
@@ -316,36 +331,12 @@ Avoid adding hyperlinks, bold text, or reaction emojis (e.g., 😊, 😮). Howev
 Exclude terms like "However," "Additionally," or "Delighted" in your corrections.
 Your output should contain only the corrected text without quotation marks or additional commentary. Always use the same dialect or variety as the provided input.
         `.trim();
-        const mistral = createMistral({
-          apiKey: env.MISTRAL_API_KEY,
-        });
-
-        // Use Vercel AI SDK to generate text
-        const { text: correctedText } = await generateText({
-          model: mistral('mistral-medium-2505'),
-          system: systemInstruction,
-          prompt: text,
-          temperature: 0.7,
-        });
-
-        return new Response(JSON.stringify({ text: correctedText }), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
+        return jsonResponse(await proofreadWithFallback(env, text, systemInstruction));
       } catch (error) {
-        console.error("Error proofreading text:", error);
-        return new Response(
-          JSON.stringify({ error: "Error proofreading text: " + error.message }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
-        );
+        if (error instanceof AIUnavailableError) {
+          return jsonResponse({ error: error.message, providers: error.providers }, 503);
+        }
+        return jsonResponse({ error: "Error proofreading text. Please try again later." }, 500);
       }
     }
 

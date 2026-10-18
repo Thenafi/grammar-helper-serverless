@@ -1,17 +1,14 @@
 {
     "name": "grammar-helper-serverless",
     "version": "1.0.0",
-    "description": "Grammar Helper powered by Gemini AI",
+    "description": "Grammar Helper powered by DeepSeek via AgentRouter with Gemini fallback",
     "main": "app.js",
     "type": "module",
     "scripts": {
         "start": "wrangler dev",
         "deploy": "wrangler deploy",
-        "preview": "wrangler preview"
-    },
-    "dependencies": {
-        "@ai-sdk/mistral": "^2.0.26",
-        "ai": "^5.0.112"
+        "preview": "wrangler preview",
+        "test": "node --test"
     },
     "devDependencies": {
         "wrangler": "^3.0.0"
