@@ -1,11 +1,14 @@
+import { errorDetails, logEvent } from "./logging.js";
+
 const REQUEST_TIMEOUT_MS = 20_000;
 const HEALTH_TIMEOUT_MS = 10_000;
 
 class ProviderError extends Error {
-  constructor(code, message, upstreamStatus) {
+  constructor(code, message, upstreamStatus, diagnostics = {}) {
     super(message);
     this.code = code;
     this.upstreamStatus = upstreamStatus;
+    this.diagnostics = diagnostics;
   }
 }
 
@@ -24,7 +27,7 @@ function getProviders(env) {
     {
       provider: "agentrouter",
       role: "primary",
-      model: env.AGENTROUTER_MODEL || "deepseek-flash",
+      model: env.AGENTROUTER_MODEL || "deepseek-v4-flash",
       endpoint: `${agentRouterBase}/chat/completions`,
       apiKey: env.agentrouter_key,
     },
@@ -48,6 +51,42 @@ function publicError(error) {
     };
   }
   return { code: "request_failed", message: "Could not reach the AI provider." };
+}
+
+function upstreamError(data) {
+  const error = data?.error;
+  const fields = {
+    message: typeof error === "string" ? error : error?.message ?? data?.msg ?? data?.message,
+    code: error?.code ?? data?.code,
+    type: error?.type,
+    status: error?.status,
+  };
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) =>
+    typeof value === "string" || typeof value === "number"));
+}
+
+function logProviderFailure(provider, error, env, text, operation, requestId, started, timeoutMs) {
+  let endpoint = "[invalid endpoint]";
+  try {
+    const url = new URL(provider.endpoint);
+    endpoint = `${url.origin}${url.pathname}`;
+  } catch {
+    // A malformed endpoint must not prevent logging or the backup attempt.
+  }
+  logEvent("error", "ai_provider_error", {
+    requestId,
+    operation,
+    provider: provider.provider,
+    role: provider.role,
+    model: provider.model,
+    endpoint,
+    configured: Boolean(provider.apiKey),
+    secretName: provider.provider === "agentrouter" ? "agentrouter_key" : "GEMINI_API_KEY",
+    latencyMs: Date.now() - started,
+    timeoutMs,
+    ...publicError(error),
+    diagnostics: error instanceof ProviderError ? error.diagnostics : errorDetails(error),
+  }, [env.agentrouter_key, env.GEMINI_API_KEY, text]);
 }
 
 async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS, maxOutputTokens } = {}) {
@@ -85,6 +124,7 @@ async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let diagnostics = {};
 
   try {
     const response = await fetch(provider.endpoint, {
@@ -95,16 +135,33 @@ async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS
       redirect: "error",
     });
 
+    diagnostics = {
+      upstreamStatus: response.status,
+      contentType: response.headers.get("content-type"),
+      upstreamRequestId: response.headers.get("x-request-id") || response.headers.get("request-id") || response.headers.get("cf-ray"),
+      retryAfter: response.headers.get("retry-after"),
+    };
+
     if (!response.ok) {
-      throw new ProviderError("http_error", `The AI provider returned HTTP ${response.status}.`, response.status);
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        // Non-JSON error pages are identified by their status and content type.
+      }
+      throw new ProviderError("http_error", `The AI provider returned HTTP ${response.status}.`, response.status, {
+        ...diagnostics, upstreamError: upstreamError(data),
+      });
     }
 
     let data;
     try {
       data = await response.json();
     } catch {
-      throw new ProviderError("invalid_response", "The AI provider did not return valid JSON.");
+      throw new ProviderError("invalid_response", "The AI provider did not return valid JSON.", undefined, diagnostics);
     }
+    diagnostics.upstreamError = upstreamError(data);
+    diagnostics.blockReason = data?.promptFeedback?.blockReason;
 
     let result;
     let finishReason;
@@ -122,15 +179,17 @@ async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS
     }
 
     if (finishReason && finishReason !== (isAgentRouter ? "stop" : "STOP")) {
-      throw new ProviderError("incomplete_response", "The AI provider did not return a complete text response.");
+      throw new ProviderError("incomplete_response", "The AI provider did not return a complete text response.", undefined, {
+        ...diagnostics, finishReason,
+      });
     }
     if (typeof result !== "string" || !result.trim()) {
-      throw new ProviderError("empty_response", "The AI provider did not return any text.");
+      throw new ProviderError("empty_response", "The AI provider did not return any text.", undefined, diagnostics);
     }
     return result;
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new ProviderError("timeout", "The AI provider request timed out.");
+      throw new ProviderError("timeout", "The AI provider request timed out.", undefined, diagnostics);
     }
     throw error;
   } finally {
@@ -138,11 +197,18 @@ async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS
   }
 }
 
-export async function proofreadWithFallback(env, text, system) {
+export async function proofreadWithFallback(env, text, system, { requestId } = {}) {
   const failures = [];
   for (const provider of getProviders(env)) {
+    const started = Date.now();
     try {
       const correctedText = await generate(provider, text, system);
+      if (provider.role === "backup") {
+        logEvent("info", "ai_fallback_succeeded", {
+          requestId, operation: "proofread", provider: provider.provider, model: provider.model,
+          latencyMs: Date.now() - started,
+        }, [env.agentrouter_key, env.GEMINI_API_KEY, text]);
+      }
       return {
         text: correctedText,
         provider: provider.provider,
@@ -150,13 +216,16 @@ export async function proofreadWithFallback(env, text, system) {
         fallbackUsed: provider.role === "backup",
       };
     } catch (error) {
+      logProviderFailure(provider, error, env, text, "proofread", requestId, started, REQUEST_TIMEOUT_MS);
       failures.push({ provider: provider.provider, model: provider.model, error: publicError(error) });
     }
   }
+  logEvent("error", "ai_all_providers_failed", { requestId, operation: "proofread", providers: failures },
+    [env.agentrouter_key, env.GEMINI_API_KEY, text]);
   throw new AIUnavailableError(failures);
 }
 
-export async function checkAIHealth(env) {
+export async function checkAIHealth(env, { requestId } = {}) {
   const providers = await Promise.all(getProviders(env).map(async provider => {
     const started = Date.now();
     const result = {
@@ -173,6 +242,7 @@ export async function checkAIHealth(env) {
       });
       return { ...result, working: true, latencyMs: Date.now() - started };
     } catch (error) {
+      logProviderFailure(provider, error, env, undefined, "health", requestId, started, HEALTH_TIMEOUT_MS);
       return { ...result, working: false, latencyMs: Date.now() - started, error: publicError(error) };
     }
   }));

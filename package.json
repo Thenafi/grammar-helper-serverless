@@ -7,6 +7,7 @@
     "scripts": {
         "start": "wrangler dev",
         "deploy": "wrangler deploy",
+        "tail": "wrangler tail --format pretty",
         "preview": "wrangler preview",
         "test": "node --test"
     },

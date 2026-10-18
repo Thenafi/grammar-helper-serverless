@@ -1,6 +1,6 @@
 # Grammar Helper Serverless
 
-A serverless grammar checker running on Cloudflare Workers. Uses **DeepSeek V4.1 Flash through AgentRouter** first, with **Gemini 3.5 Flash-Lite** as an automatic backup.
+A serverless grammar checker running on Cloudflare Workers. Uses **DeepSeek Flash through AgentRouter** (`deepseek-v4-flash`) first, with **Gemini 3.5 Flash-Lite** as an automatic backup.
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ The non-secret settings in `wrangler.toml` control the providers:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `AGENTROUTER_BASE_URL` | `https://co.agentrouter.org/v1` | AgentRouter's documented API base, including `/v1` |
-| `AGENTROUTER_MODEL` | `deepseek-flash` | DeepSeek's model ID for V4.1 Flash; change this if your AgentRouter account requires a different alias |
+| `AGENTROUTER_MODEL` | `deepseek-v4-flash` | Requested DeepSeek model ID sent to AgentRouter |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Direct Google Gemini backup model |
 
 See the [AgentRouter integration guide](https://co.agentrouter.org/portal/guide), [DeepSeek model IDs](https://api-docs.deepseek.com/quick_start/pricing/), and [Gemini model details](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite). AgentRouter model availability depends on your account; `/health` verifies the configured model with your key.
@@ -76,10 +76,24 @@ curl http://localhost:8787/health
 
 No API keys, upstream response bodies, or user text are included in health results.
 
+## Troubleshooting with Cloudflare tail
+
+After deploying, start the [live log stream](https://developers.cloudflare.com/workers/observability/logs/real-time-logs/) and reproduce the error in the app or call `/health`:
+
+```bash
+npm run tail
+```
+
+Every provider failure emits a JSON `console.error` entry named `ai_provider_error`, including failures that trigger fallback. Entries include the operation (`proofread` or `health`), provider, model, endpoint, whether its secret is configured, latency, timeout, and error code. HTTP errors also include the upstream status, request ID, content type, and the provider's error message/code when available. Incomplete generations include their finish or safety-block reason. Network errors include diagnostic messages and stack traces.
+
+All entries for one request share a `requestId`, also returned in the response's `X-Request-ID` header. `ai_fallback_succeeded` confirms Gemini recovered a failed primary request; `ai_all_providers_failed` means both attempts failed. Unexpected handler errors emit `request_error`.
+
+API keys and submitted text are redacted from diagnostic messages, strings are bounded, and full provider response bodies are never logged. Start tail without `--status error`: handled provider failures can appear in invocations marked `ok`, including successful fallbacks and responses with HTTP 503.
+
 ## Features
 
 - Real-time grammar and spelling correction
-- Powered by **DeepSeek V4.1 Flash** via AgentRouter, with **Gemini 3.5 Flash-Lite** failover
+- Powered by **DeepSeek Flash** (`deepseek-v4-flash`) via AgentRouter, with **Gemini 3.5 Flash-Lite** failover
 - Live AI health checks at `/health` and `/api/health`
 - Clean, user-friendly interface
 - One-click copy to clipboard

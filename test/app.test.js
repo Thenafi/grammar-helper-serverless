@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { test } from "node:test";
+import { beforeEach, test } from "node:test";
 import worker from "../app.js";
 
 const env = { agentrouter_key: "test-agentrouter-secret", GEMINI_API_KEY: "test-gemini-secret" };
 const agentRouterEndpoint = "https://co.agentrouter.org/v1/chat/completions";
 const geminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
+
+beforeEach(t => {
+  t.mock.method(console, "error", () => {});
+  t.mock.method(console, "info", () => {});
+});
 
 function agentRouterResponse(text = "This is correct.", finishReason = "stop") {
   return Response.json({ choices: [{ message: { content: text }, finish_reason: finishReason }] });
@@ -36,7 +41,7 @@ test("proofreading uses AgentRouter first with the existing lowercase secret and
     assert.equal(init.headers.Authorization, `Bearer ${env.agentrouter_key}`);
     assert.equal(init.headers["x-goog-api-key"], undefined);
     const body = JSON.parse(init.body);
-    assert.equal(body.model, "deepseek-flash");
+    assert.equal(body.model, "deepseek-v4-flash");
     assert.equal(body.messages[0].role, "system");
     assert.match(body.messages[0].content, /You are a proofreader/);
     assert.deepEqual(body.messages[1], { role: "user", content: original });
@@ -49,7 +54,7 @@ test("proofreading uses AgentRouter first with the existing lowercase secret and
   assert.equal(response.status, 200);
   assert.equal(mockedFetch.mock.callCount(), 1);
   assert.deepEqual(await response.json(), {
-    text: corrected, provider: "agentrouter", model: "deepseek-flash", fallbackUsed: false,
+    text: corrected, provider: "agentrouter", model: "deepseek-v4-flash", fallbackUsed: false,
   });
 });
 

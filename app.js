@@ -1,4 +1,5 @@
 import { AIUnavailableError, checkAIHealth, proofreadWithFallback } from "./ai-providers.js";
+import { errorDetails, logEvent } from "./logging.js";
 
 const HTML_CONTENT = `<!DOCTYPE html>
 <html lang="en">
@@ -278,13 +279,14 @@ const HTML_CONTENT = `<!DOCTYPE html>
 </body>
 </html>`;
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, requestId) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json;charset=UTF-8",
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-store",
+      ...(requestId ? { "X-Request-ID": requestId, "Access-Control-Expose-Headers": "X-Request-ID" } : {}),
     },
   });
 }
@@ -301,9 +303,18 @@ export default {
       });
     }
 
+    const requestId = crypto.randomUUID();
+
     if ((url.pathname === "/health" || url.pathname === "/api/health") && request.method === "GET") {
-      const health = await checkAIHealth(env);
-      return jsonResponse(health, health.status === "unhealthy" ? 503 : 200);
+      try {
+        const health = await checkAIHealth(env, { requestId });
+        return jsonResponse(health, health.status === "unhealthy" ? 503 : 200, requestId);
+      } catch (error) {
+        logEvent("error", "request_error", {
+          requestId, operation: "health", error: errorDetails(error),
+        }, [env.agentrouter_key, env.GEMINI_API_KEY]);
+        return jsonResponse({ error: "Unable to check AI provider health." }, 503, requestId);
+      }
     }
 
     if (url.pathname === "/api/proofread" && request.method === "POST") {
@@ -311,12 +322,12 @@ export default {
       try {
         input = await request.json();
       } catch {
-        return jsonResponse({ error: "Request body must be valid JSON." }, 400);
+        return jsonResponse({ error: "Request body must be valid JSON." }, 400, requestId);
       }
 
       const text = input?.text;
       if (typeof text !== "string" || !text.trim()) {
-        return jsonResponse({ error: "Text must be a non-empty string." }, 400);
+        return jsonResponse({ error: "Text must be a non-empty string." }, 400, requestId);
       }
 
       try {
@@ -331,12 +342,15 @@ Avoid adding hyperlinks, bold text, or reaction emojis (e.g., 😊, 😮). Howev
 Exclude terms like "However," "Additionally," or "Delighted" in your corrections.
 Your output should contain only the corrected text without quotation marks or additional commentary. Always use the same dialect or variety as the provided input.
         `.trim();
-        return jsonResponse(await proofreadWithFallback(env, text, systemInstruction));
+        return jsonResponse(await proofreadWithFallback(env, text, systemInstruction, { requestId }), 200, requestId);
       } catch (error) {
         if (error instanceof AIUnavailableError) {
-          return jsonResponse({ error: error.message, providers: error.providers }, 503);
+          return jsonResponse({ error: error.message, providers: error.providers }, 503, requestId);
         }
-        return jsonResponse({ error: "Error proofreading text. Please try again later." }, 500);
+        logEvent("error", "request_error", {
+          requestId, operation: "proofread", error: errorDetails(error),
+        }, [env.agentrouter_key, env.GEMINI_API_KEY, text]);
+        return jsonResponse({ error: "Error proofreading text. Please try again later." }, 500, requestId);
       }
     }
 
