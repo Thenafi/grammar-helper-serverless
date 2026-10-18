@@ -20,7 +20,7 @@ export class AIUnavailableError extends Error {
 }
 
 function getProviders(env) {
-  const agentRouterBase = (env.AGENTROUTER_BASE_URL || "https://co.agentrouter.org/v1").replace(/\/+$/, "");
+  const agentRouterBase = (env.AGENTROUTER_BASE_URL || "https://agentrouter.org/v1").replace(/\/+$/, "");
   const geminiModel = env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
   return [
@@ -132,7 +132,8 @@ async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS
       headers,
       body: JSON.stringify(body),
       signal: controller.signal,
-      redirect: "error",
+      // Workers supports manual/follow only. Reject 3xx below without forwarding credentials.
+      redirect: "manual",
     });
 
     diagnostics = {
@@ -158,7 +159,10 @@ async function generate(provider, text, system, { timeoutMs = REQUEST_TIMEOUT_MS
     try {
       data = await response.json();
     } catch {
-      throw new ProviderError("invalid_response", "The AI provider did not return valid JSON.", undefined, diagnostics);
+      const message = diagnostics.contentType?.toLowerCase().includes("text/html")
+        ? "The AI provider returned an HTML page instead of JSON. Check the API URL and provider access restrictions."
+        : "The AI provider did not return valid JSON.";
+      throw new ProviderError("invalid_response", message, undefined, diagnostics);
     }
     diagnostics.upstreamError = upstreamError(data);
     diagnostics.blockReason = data?.promptFeedback?.blockReason;

@@ -4,7 +4,7 @@ import { beforeEach, test } from "node:test";
 import worker from "../app.js";
 
 const env = { agentrouter_key: "test-agentrouter-secret", GEMINI_API_KEY: "test-gemini-secret" };
-const agentRouterEndpoint = "https://co.agentrouter.org/v1/chat/completions";
+const agentRouterEndpoint = "https://agentrouter.org/v1/chat/completions";
 const geminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
 
 beforeEach(t => {

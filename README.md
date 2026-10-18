@@ -34,11 +34,11 @@ The non-secret settings in `wrangler.toml` control the providers:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AGENTROUTER_BASE_URL` | `https://co.agentrouter.org/v1` | AgentRouter's documented API base, including `/v1` |
+| `AGENTROUTER_BASE_URL` | `https://agentrouter.org/v1` | AgentRouter API base, including `/v1` |
 | `AGENTROUTER_MODEL` | `deepseek-v4-flash` | Requested DeepSeek model ID sent to AgentRouter |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Direct Google Gemini backup model |
 
-See the [AgentRouter integration guide](https://co.agentrouter.org/portal/guide), [DeepSeek model IDs](https://api-docs.deepseek.com/quick_start/pricing/), and [Gemini model details](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite). AgentRouter model availability depends on your account; `/health` verifies the configured model with your key.
+See the [AgentRouter integration guide](https://agentrouter.org/docs/index.html), [DeepSeek model IDs](https://api-docs.deepseek.com/quick_start/pricing/), and [Gemini model details](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite). AgentRouter model availability depends on your account; `/health` verifies the configured model with your key. The primary endpoint is `https://agentrouter.org/v1/chat/completions`; a key for this host is not assumed to work on other AgentRouter gateways. An HTML verification page is a failed API response and triggers the Gemini backup.
 
 ## Development
 
@@ -50,7 +50,7 @@ npm start
 
 The app will be available at `http://localhost:8787`
 
-Run the automated tests with `npm test`.
+Run the automated tests with `npm test`. These include outbound requests in the local Cloudflare Worker runtime, with provider responses simulated so no API keys or quota are required.
 
 ## Deployment
 
@@ -63,6 +63,8 @@ npm run deploy
 ## AI endpoints and health
 
 `POST /api/proofread` accepts `{ "text": "Your text here" }` and returns the corrected `text`, the `provider` and `model` used, and `fallbackUsed`. AgentRouter is tried first. Missing keys, HTTP errors, timeouts, invalid/empty responses, and incomplete generations trigger the Gemini backup. Each provider request has a 20-second timeout. If both fail, the endpoint returns HTTP 503 with sanitized provider errors.
+
+Provider requests use Cloudflare's supported `manual` redirect mode. Redirect responses are treated as provider failures, and credentials are never forwarded to the redirect destination.
 
 `GET /health` (also available at `/api/health`) makes a real, small generation request to **each** configured provider in parallel. It reports their endpoints, models, key configuration, working status, latency, and sanitized errors. Checks have a 10-second timeout per provider and a 32-token output limit. Responses are not cached, and each check uses provider quota.
 

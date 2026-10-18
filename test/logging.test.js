@@ -4,7 +4,7 @@ import { test } from "node:test";
 import worker from "../app.js";
 
 const env = { agentrouter_key: "private-agentrouter-key", GEMINI_API_KEY: "private-gemini-key" };
-const primaryEndpoint = "https://co.agentrouter.org/v1/chat/completions";
+const primaryEndpoint = "https://agentrouter.org/v1/chat/completions";
 
 function captureLogs(t) {
   const errors = [];
@@ -118,6 +118,7 @@ test("HTML responses log their status and content type without logging the page"
   assert.equal(logs.errors[0].code, "invalid_response");
   assert.equal(logs.errors[0].diagnostics.upstreamStatus, 200);
   assert.equal(logs.errors[0].diagnostics.contentType, "text/html");
+  assert.match(logs.errors[0].message, /HTML page instead of JSON/);
   assert.ok(!JSON.stringify(logs).includes("Private verification page"));
 });
 
