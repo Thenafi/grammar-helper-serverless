@@ -28,7 +28,7 @@ test("successful requests log prompt sizes and a request ID without logging thei
   }));
   const response = await proofread(text);
   assert.equal(response.status, 200);
-  assert.equal(logs.errors.length, 0);
+  assert.equal(logs.errors.length, 1);
   assert.equal(logs.info.length, 1);
   const entry = logs.info[0];
   assert.equal(entry.event, "ai_request_succeeded");
@@ -46,11 +46,11 @@ test("Google error details are visible in tail and remain out of the client resp
   }, { status: 429, headers: { "x-request-id": "google-request-123", "retry-after": "5" } }));
   const response = await proofread("Private sentence.");
   assert.equal(response.status, 503);
-  assert.equal(logs.errors.length, 1);
-  const entry = logs.errors[0];
+  assert.equal(logs.errors.length, 2);
+  const entry = logs.errors[1];
   assert.equal(entry.event, "ai_provider_error");
   assert.equal(entry.provider, "gemini");
-  assert.equal(entry.role, "primary");
+  assert.equal(entry.role, "fallback");
   assert.equal(entry.secretName, "GEMINI_API_KEY");
   assert.equal(entry.upstreamStatus, 429);
   assert.equal(entry.diagnostics.upstreamError.message, "Quota exceeded");
@@ -81,7 +81,7 @@ for (const failure of ["HTTP", "network"]) {
     assert.ok(!serialized.includes("Private sentence"));
     assert.ok(!serialized.includes("Full response body"));
     assert.ok(serialized.includes("[REDACTED]"));
-    if (failure === "network") assert.ok(logs.errors[0].diagnostics.stack);
+    if (failure === "network") assert.ok(logs.errors[1].diagnostics.stack);
   });
 }
 
@@ -92,8 +92,8 @@ test("health failures log the Gemini operation and safety reason", async t => {
   }));
   const response = await worker.fetch(new Request("https://grammar.example/health"), { GEMINI_API_KEY: "private-key" });
   assert.equal(response.status, 503);
-  assert.equal(logs.errors.length, 1);
-  assert.equal(logs.errors[0].operation, "health");
-  assert.equal(logs.errors[0].diagnostics.finishReason, "SAFETY");
-  assert.equal(logs.errors[0].diagnostics.blockReason, "SAFETY");
+  assert.equal(logs.errors.length, 2);
+  assert.equal(logs.errors[1].operation, "health");
+  assert.equal(logs.errors[1].diagnostics.finishReason, "SAFETY");
+  assert.equal(logs.errors[1].diagnostics.blockReason, "SAFETY");
 });

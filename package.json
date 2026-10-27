@@ -1,7 +1,7 @@
 {
     "name": "grammar-helper-serverless",
     "version": "1.0.0",
-    "description": "Grammar Helper powered by Gemini 3.5 Flash-Lite on Cloudflare Workers",
+    "description": "Grammar Helper powered by Groq Qwen 3.8 27B with Gemini fallback on Cloudflare Workers",
     "main": "app.js",
     "type": "module",
     "scripts": {

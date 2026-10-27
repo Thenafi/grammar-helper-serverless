@@ -35,7 +35,7 @@ test("proofreading sends separate system instructions and exact user text direct
     assert.match(body.systemInstruction.parts[0].text, /language, dialect, and formatting/);
     assert.match(body.systemInstruction.parts[0].text, /return it exactly as provided/);
     assert.ok(!body.systemInstruction.parts[0].text.includes(original));
-    assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, "minimal");
+    assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, "low");
     for (const key of ["temperature", "topP", "topK"]) assert.equal(body.generationConfig[key], undefined);
     return geminiResponse(corrected);
   });
@@ -43,7 +43,7 @@ test("proofreading sends separate system instructions and exact user text direct
   assert.equal(response.status, 200);
   assert.equal(mockedFetch.mock.callCount(), 1);
   assert.deepEqual(await response.json(), {
-    text: corrected, provider: "gemini", model: "gemini-3.5-flash-lite", fallbackUsed: false,
+    text: corrected, provider: "gemini", model: "gemini-3.5-flash-lite", fallbackUsed: true,
   });
 });
 
@@ -86,9 +86,9 @@ for (const [name, failure, code] of failures) {
     assert.equal(response.status, 503);
     assert.equal(mockedFetch.mock.callCount(), 1);
     const data = await response.json();
-    assert.equal(data.providers.length, 1);
-    assert.equal(data.providers[0].provider, "gemini");
-    assert.equal(data.providers[0].error.code, code);
+    assert.equal(data.providers.length, 2);
+    assert.equal(data.providers[1].provider, "gemini");
+    assert.equal(data.providers[1].error.code, code);
   });
 }
 
@@ -121,7 +121,7 @@ for (const phase of ["connection", "response body"]) {
     const response = await pending;
     assert.equal(response.status, 503);
     assert.equal(mockedFetch.mock.callCount(), 1);
-    assert.equal((await response.json()).providers[0].error.code, "timeout");
+    assert.equal((await response.json()).providers[1].error.code, "timeout");
   });
 }
 
@@ -131,7 +131,7 @@ for (const path of ["/health", "/api/health"]) {
       assert.equal(url, endpoint);
       const body = JSON.parse(init.body);
       assert.equal(body.contents[0].parts[0].text, "Reply with exactly OK.");
-      assert.equal(body.generationConfig.maxOutputTokens, 32);
+      assert.equal(body.generationConfig.maxOutputTokens, 1024);
       return geminiResponse("OK");
     });
     const response = await worker.fetch(new Request(`https://grammar.example${path}`), env);
@@ -139,11 +139,11 @@ for (const path of ["/health", "/api/health"]) {
     assert.equal(response.headers.get("Cache-Control"), "no-store");
     assert.equal(mockedFetch.mock.callCount(), 1);
     const data = await response.json();
-    assert.equal(data.status, "healthy");
-    assert.equal(data.providers.length, 1);
-    assert.equal(data.providers[0].provider, "gemini");
-    assert.equal(data.providers[0].role, "primary");
-    assert.equal(data.providers[0].working, true);
+    assert.equal(data.status, "degraded");
+    assert.equal(data.providers.length, 2);
+    assert.equal(data.providers[1].provider, "gemini");
+    assert.equal(data.providers[1].role, "fallback");
+    assert.equal(data.providers[1].working, true);
   });
 }
 
@@ -167,7 +167,7 @@ test("a stalled health check times out after 10 seconds", async t => {
   t.mock.timers.tick(10_000);
   const response = await pending;
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).providers[0].error.code, "timeout");
+  assert.equal((await response.json()).providers[1].error.code, "timeout");
 });
 
 for (const body of [null, {}, { text: "" }, { text: " \n\t" }, { text: 42 }, { text: {} }, { text: ["hello"] }]) {
